@@ -1,0 +1,24 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=5091
+
+You can see the differences between any lines displayed on the vim.
+
+It is handy and simple. Press <F9> on a line in some window, and press <F9> again on another line in same or different window, then horizontally separated two tiny windows come up at the bottom of this page and shows those differences. Selected each lines are differently highlighted on their window. To return back to the original screen, just press <F10>.
+
+You can select a block of lines by pressing <F9> in visual mode or by using SPLDiff command with range. If prefer to see those diff windows at top and/or in vertical, use g:PLDWLType global variable. <F9> and <F10> keys are configurable as well.
+
+If diffchar.vim plugin has been installed, you can see the exact differences on both the perline diff windows.
+
+Commands
+:[range]SPLDiff - select lines and show those diff windows
+:QPLDiff - quit the perline diff windows
+
+Configurable keymaps
+<Plug>ShowPerlineDiff (default: <F9>)
+<Plug>QuitPerlineDiff (default: <F10>)
+
+Global variables
+g:PLDWLType - layout type of perline diff windows
+    1 : bottom horizontal (default)
+    2 : bottom vertical
+    3 : top horizontal
+    4 : top vertical
