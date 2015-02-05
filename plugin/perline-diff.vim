@@ -26,19 +26,28 @@
 "
 " Global variables
 " g:PLDWLType - layout type of perline diff windows
-"     1	: bottom vertical (default)
-"     2 : bottom horizontal
-"     3 : top vertical
-"     4 : top horizontal
+"     1 : bottom horizontal (default)
+"     2 : bottom vertical
+"     3 : top horizontal
+"     4 : top vertical
 "
 " Author: Rick Howe
-" Last Change: 2015/01/17
-" Version: 1.0
+" Last Change: 2015/02/05
+" Version: 1.1
+"
+" Update 1.1
+" * Adjust height of perline diff windows to show just as many selected lines
+"   as possible including diff filler lines, within the half of vim's height.
+" * If any of the existing windows have been in diff mode, temporary clear the
+"   diff mode while displaying perline diff windows, just to show the
+"   difference between the selected lines on this page.
+" * If the selected lines are moved on the original window, their highlights
+"   will also stay with those lines.
 
 if exists("g:loaded_perline_diff")
 	finish
 endif
-let g:loaded_perline_diff = 1.0
+let g:loaded_perline_diff = 1.1
 
 let s:save_cpo = &cpo
 set cpo&vim
@@ -63,89 +72,138 @@ let g:PLDWLType= 1	" bottom horizontal
 " let g:PLDWLType= 4	" top vertical
 endif
 
+" Enable/Disable to Temporary Clear Diff Mode on Existing Windows
+if !exists("g:PLDCDMode")
+let g:PLDCDMode = 1	" enable
+" let g:PLDCDMode = 0	" disable
+endif
+
 " Highlight Group of Perline Diff Lines
 if !exists("g:PLDHltGrp")
 let g:PLDHltGrp = ["Search", "MatchParen"]
 endif
 
 " Layout Commands for Perline Diff Windows
-let s:PLDWLCmds = [["botright new", "rightbelow new"],
-			\["botright new", "rightbelow vnew"],
-			\["topleft new", "rightbelow new"],
-			\["topleft new", "rightbelow vnew"]]
+let s:PLDWLCmds = [["botright 1new", "rightbelow 1new"],
+			\["botright 1new", "rightbelow vnew"],
+			\["topleft 1new", "rightbelow 1new"],
+			\["topleft 1new", "rightbelow vnew"]]
 
 function! s:ShowPerlineDiff(sl, el)
-	let cbuf = winbufnr(0)
-
-	" quit existing PLD windows
-	if exists("t:pldiff[1]") && exists("t:pldiff[2]")
+	" reset if both PLD windows exist
+	if exists("t:pld_lines[1]") && exists("t:pld_lines[2]")
 		call s:QuitPerlineDiff()
 	endif
 
-	" get and highlight lines
-	if !exists("t:pldiff")
-		let t:pldiff = {}
+	" clear all diff mode on existing windows or return
+	for win in range(1, winnr('$'))
+		if getwinvar(win, "&diff")
+			if g:PLDCDMode
+				call setwinvar(win, "&diff", 0)
+				call setwinvar(win, "pld_diffed", 1)
+				if exists("g:loaded_diffchar")
+					%RDChar
+				endif
+			else
+				echo "a diff mode window already exists!"
+				return
+			endif
+		endif
+	endfor
+	
+	" get and highlight selected lines
+	if !exists("t:pld_lines")
+		let t:pld_lines = {}
 		call s:GetHighlightLines(1, a:sl, a:el)
 		return
 	endif
 	call s:GetHighlightLines(2, a:sl, a:el)
 
-	" calculate window width and height
-	let width = (g:PLDWLType % 2) ? &columns - 2 : (&columns - 1) / 2 - 2
-	let h = [0, 0]
-	for k in [1, 2]
-		for l in t:pldiff[k]
-			let w = strdisplaywidth(l)
-			let h[k - 1] += w > 0 ? (w - 1) / width + 1 : 1
-		endfor
-	endfor
-	let height = min([max(h), &lines / ((g:PLDWLType % 2) ? 4 : 2)])
+	let cbuf = winbufnr(0)
 
-	" show PLD windows
+	" open PLD windows and set options and lines
+	let wn = {}
 	for k in [1, 2]
 		exec s:PLDWLCmds[g:PLDWLType - 1][k - 1]
-		exec "resize " . height
-		call setline(1, t:pldiff[k])
-		let &l:statusline = "%=%#" . g:PLDHltGrp[k - 1] .
-				\"#[diff #" . k . "]%## " . len(t:pldiff[k])
-		diffthis
-		setlocal winfixheight nomodified nonumber wrap
-		let w:pldiff = k
+		let wn[k] = winnr()
+		let w:pld_winid = k
+		let &l:diff = 0
+		let &l:scrollbind = 1
+		let &l:winfixheight = 1
+		let &l:modified = 0
+		let &l:statusline = "%=%#" . g:PLDHltGrp[k - 1] . "#[diff #" .
+					\k . "]%## " . len(t:pld_lines[k])
+		call setline(1, t:pld_lines[k])
 	endfor
+
+	" set diff mode on PLD windows
+	call setwinvar(wn[1], "&diff", 1)
+	call setwinvar(wn[2], "&diff", 1)
+
+	" adjust window hights
+	let h = {}
+	for k in [1, 2]
+		exec wn[k] . "wincmd w"
+		let h[k] = -1
+		let ww = winwidth(0)
+		for n in range(1, line('$') + 1)
+			let lw = strdisplaywidth(getline(n))
+			let h[k] += (lw > 0 ? (lw - 1) / ww + 1 : 1) +
+							\diff_filler(n)
+		endfor
+	endfor
+	let wh = min([max(values(h)), max([float2nr(round((&lines - &cmdheight)
+			\/ (g:PLDWLType % 2 ? 4.0 : 2.0))) - 1, 1])])
+	exec wn[1] . "resize " . wh
+	exec wn[2] . "resize " . wh
 
 	exec bufwinnr(cbuf) . "wincmd w"
 endfunction
 
+let s:plmark = ['i', 'j', 'k', 'l']
+
 function! s:GetHighlightLines(k, sl, el)
 	" get lines
-	let t:pldiff[a:k] = getline(a:sl, a:el)
+	let t:pld_lines[a:k] = getline(a:sl, a:el)
 
 	" highlight lines
-	if !exists("w:pldmid") | let w:pldmid = [] | endif
-	let w:pldmid += [matchadd(g:PLDHltGrp[a:k - 1],
-		\join(map(range(a:sl, a:el), '"\\%" . v:val . "l"'), '\|'), 0)]
+	if !exists("w:pld_hlmid") | let w:pld_hlmid = [] | endif
+	let [sm, em] = s:plmark[(a:k - 1) * 2 : (a:k - 1) * 2 + 1]
+	exec a:sl . "mark " . sm | exec a:el . "mark " . em
+	let w:pld_hlmid += [matchadd(g:PLDHltGrp[a:k - 1], (a:sl == a:el ?
+		\"" : "^.*\\%>'" . sm . ".*\\%<'" . em . ".*$\\|") .
+			\"^.*\\%'" . em . ".*$", 0)]
 endfunction
 
 function! s:QuitPerlineDiff()
 	let cbuf = winbufnr(0)
 
+	" quit all PLD windows
 	for win in range(winnr('$'), 1, -1)
-		" delete match ids
-		if !empty(getwinvar(win, "pldmid", []))
-			exec win . "wincmd w"
-			for m in w:pldmid | call matchdelete(m) | endfor
-			unlet w:pldmid
-		endif
-
-		" quit PLD window
-		if getwinvar(win, "pldiff", 0)
+		if getwinvar(win, "pld_winid", 0)
 			exec win . "wincmd w"
 			quit!
 		endif
 	endfor
 
-	" delete line buffers
-	if exists("t:pldiff") | unlet t:pldiff | endif
+	for win in range(1, winnr('$'))
+		" delete highlight match ids
+		if !empty(getwinvar(win, "pld_hlmid", []))
+			exec win . "wincmd w"
+			for m in w:pld_hlmid | call matchdelete(m) | endfor
+			unlet w:pld_hlmid
+			exec "delmarks " join(s:plmark)
+		endif
+
+		" restore diff mode on original diff mode windows
+		if getwinvar(win, "pld_diffed", 0)
+			call setwinvar(win, "&diff", 1)
+			call setwinvar(win, "pld_diffed", 0)
+		endif
+	endfor
+
+	" delete line buffer
+	if exists("t:pld_lines") | unlet t:pld_lines | endif
 
 	exec bufwinnr(cbuf) . "wincmd w"
 endfunction
