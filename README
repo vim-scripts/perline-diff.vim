@@ -23,7 +23,11 @@ g:PLDWLType - layout type of perline diff windows
     3 : top horizontal
     4 : top vertical
 
+Update 1.2
+* Fixed to restore the size of existing windows after closing perline diff windows.
+* Fixed to show the exact difference with diffchar.vim 5.3 and later.
+
 Update 1.1
+* If an original window has been in diff mode, temporary clear its diff mode while displaying perline diff windows.
+* If the selected lines are moved on the original window, their highlights will also follow those lines.
 * Adjust height of perline diff windows to show just as many selected lines as possible including diff filler lines, within the half of vim's height.
-* If any of the existing windows have been in diff mode, temporary clear the diff mode while displaying perline diff windows, just to show the difference between the selected lines on this page.
-* If the selected lines are moved on the original window, their highlights will also stay with those lines.

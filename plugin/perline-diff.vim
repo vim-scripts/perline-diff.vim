@@ -32,17 +32,21 @@
 "     4 : top vertical
 "
 " Author: Rick Howe
-" Last Change: 2015/02/05
-" Version: 1.1
+" Last Change: 2015/10/07
+" Version: 1.2
+"
+" Update 1.2
+" * Fixed to restore the size of existing windows after closing perline diff
+"   windows.
+" * Fixed to show the exact difference with diffchar.vim 5.3 and later.
 "
 " Update 1.1
+" * If an original window has been in diff mode, temporary clear its diff mode
+"   while displaying perline diff windows.
+" * If the selected lines are moved on the original window, their highlights
+"   will also follow those lines.
 " * Adjust height of perline diff windows to show just as many selected lines
 "   as possible including diff filler lines, within the half of vim's height.
-" * If any of the existing windows have been in diff mode, temporary clear the
-"   diff mode while displaying perline diff windows, just to show the
-"   difference between the selected lines on this page.
-" * If the selected lines are moved on the original window, their highlights
-"   will also stay with those lines.
 
 if exists("g:loaded_perline_diff")
 	finish
@@ -72,7 +76,7 @@ let g:PLDWLType= 1	" bottom horizontal
 " let g:PLDWLType= 4	" top vertical
 endif
 
-" Enable/Disable to Temporary Clear Diff Mode on Existing Windows
+" Temporary clear diff mode on existing windows
 if !exists("g:PLDCDMode")
 let g:PLDCDMode = 1	" enable
 " let g:PLDCDMode = 0	" disable
@@ -119,6 +123,9 @@ function! s:ShowPerlineDiff(sl, el)
 	endif
 	call s:GetHighlightLines(2, a:sl, a:el)
 
+	" save a command to restore the size of existing windows
+	let s:restcmd = winrestcmd()
+
 	let cbuf = winbufnr(0)
 
 	" open PLD windows and set options and lines
@@ -127,18 +134,14 @@ function! s:ShowPerlineDiff(sl, el)
 		exec s:PLDWLCmds[g:PLDWLType - 1][k - 1]
 		let wn[k] = winnr()
 		let w:pld_winid = k
-		let &l:diff = 0
 		let &l:scrollbind = 1
 		let &l:winfixheight = 1
 		let &l:modified = 0
 		let &l:statusline = "%=%#" . g:PLDHltGrp[k - 1] . "#[diff #" .
 					\k . "]%## " . len(t:pld_lines[k])
 		call setline(1, t:pld_lines[k])
+		let &l:diff = 1
 	endfor
-
-	" set diff mode on PLD windows
-	call setwinvar(wn[1], "&diff", 1)
-	call setwinvar(wn[2], "&diff", 1)
 
 	" adjust window hights
 	let h = {}
@@ -206,6 +209,9 @@ function! s:QuitPerlineDiff()
 	if exists("t:pld_lines") | unlet t:pld_lines | endif
 
 	exec bufwinnr(cbuf) . "wincmd w"
+
+	" restore the size of existing windows
+	exec s:restcmd
 endfunction
 
 let &cpo = s:save_cpo
